@@ -5,8 +5,11 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 
+import org.springframework.stereotype.Component;
+
 import com.banking.system.dto.TransferRequest;
 
+@Component
 public class TransferRequestHasher {
 
     public String hash(TransferRequest request) {

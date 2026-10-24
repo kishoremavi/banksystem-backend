@@ -4,14 +4,11 @@ import java.math.BigDecimal;
 
 public class TransferResponse {
 
-    private Long transferId;
-    private Long sourceAccountId;
-    private Long destinationAccountId;
-    private BigDecimal amount;
-    private String status;
-
-    public TransferResponse() {
-    }
+    private final Long transferId;
+    private final Long sourceAccountId;
+    private final Long destinationAccountId;
+    private final BigDecimal amount;
+    private final String status;
 
     public TransferResponse(
             Long transferId,
