@@ -37,6 +37,35 @@ public class TransferService {
         this.transferRequestHasher = transferRequestHasher;
     }
 
+    private TransferResponse buildTransferResponse(Transfer transfer) {
+        return new TransferResponse(
+                transfer.getId(),
+                transfer.getSourceAccount().getId(),
+                transfer.getDestinationAccount().getId(),
+                transfer.getAmount(),
+                transfer.getStatus());
+    }
+
+    private TransferResponse getExistingTransferResponse(
+            String idempotencyKey,
+            String requestHash) {
+
+        Optional<IdempotencyRecord> existingRecord = idempotencyRepository.findByIdempotencyKey(idempotencyKey);
+
+        if (existingRecord.isEmpty()) {
+            return null;
+        }
+
+        IdempotencyRecord record = existingRecord.get();
+
+        if (!record.getRequestHash().equals(requestHash)) {
+            throw new IllegalArgumentException(
+                    "Idempotency key was already used for a different transfer request");
+        }
+
+        return buildTransferResponse(record.getTransfer());
+    }
+
     private List<BankAccount> lockAccountsInOrder(Long firstAccountId, Long secondAccountId) {
 
         List<BankAccount> accounts = new ArrayList<>();
@@ -58,64 +87,121 @@ public class TransferService {
     }
 
     @Transactional
-    public TransferResponse transferMoney(TransferRequest transferRequest, String idempotencyKey) {
+    public TransferResponse transferMoney(
+            TransferRequest transferRequest,
+            String idempotencyKey) {
 
+        // 1. Validate the request and idempotency key.
+        if (transferRequest == null) {
+            throw new IllegalArgumentException(
+                    "Transfer request cannot be null");
+        }
+
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            throw new IllegalArgumentException(
+                    "Idempotency key is required");
+        }
+
+        if (transferRequest.getSourceAccountId() == null
+                || transferRequest.getDestinationAccountId() == null) {
+            throw new IllegalArgumentException(
+                    "Source and destination account IDs are required");
+        }
+
+        if (transferRequest.getSourceAccountId()
+                .equals(transferRequest.getDestinationAccountId())) {
+            throw new IllegalArgumentException(
+                    "Source and destination accounts cannot be the same");
+        }
+
+        if (transferRequest.getAmount() == null
+                || transferRequest.getAmount()
+                        .compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalArgumentException(
+                    "Amount must be greater than zero");
+        }
+
+        // 2. Calculate a hash representing this request.
         String requestHash = transferRequestHasher.hash(transferRequest);
-        Optional<IdempotencyRecord> existingRecord = idempotencyRepository.findByIdempotencyKey(idempotencyKey);
-        if (existingRecord.isPresent()) {
-            IdempotencyRecord record = existingRecord.get();
-            if (!record.getRequestHash().equals(requestHash)) {
-                throw new IllegalArgumentException(
-                        "Idempotency key was already used for a different transfer request");
-            }
-            Transfer existingTransfer = record.getTransfer();
-            return new TransferResponse(
-                    existingTransfer.getId(),
-                    existingTransfer.getSourceAccount().getId(),
-                    existingTransfer.getDestinationAccount().getId(),
-                    existingTransfer.getAmount(),
-                    existingTransfer.getStatus());
+
+        // 3. Check whether this idempotency key was already processed.
+        TransferResponse existingResponse = getExistingTransferResponse(idempotencyKey, requestHash);
+
+        if (existingResponse != null) {
+            return existingResponse;
         }
 
-        if (transferRequest.getSourceAccountId().equals(transferRequest.getDestinationAccountId())) {
-            throw new IllegalArgumentException("Source and destination accounts cannot be the same");
-        }
-
-        List<BankAccount> accounts = lockAccountsInOrder(transferRequest.getSourceAccountId(),
+        // 4. Lock both accounts in a consistent order.
+        List<BankAccount> accounts = lockAccountsInOrder(
+                transferRequest.getSourceAccountId(),
                 transferRequest.getDestinationAccountId());
 
+        // 5. Check again after acquiring the locks.
+        // Another request may have completed the same transfer while
+        // this request was waiting for the account locks.
+        existingResponse = getExistingTransferResponse(idempotencyKey, requestHash);
+
+        if (existingResponse != null) {
+            return existingResponse;
+        }
+
+        // 6. Identify the source and destination accounts.
         BankAccount sourceAccount;
         BankAccount destinationAccount;
 
-        if (!accounts.get(0).getId().equals(transferRequest.getSourceAccountId())) {
-            sourceAccount = accounts.get(1);
-            destinationAccount = accounts.get(0);
-        } else {
+        if (accounts.get(0).getId()
+                .equals(transferRequest.getSourceAccountId())) {
+
             sourceAccount = accounts.get(0);
             destinationAccount = accounts.get(1);
+
+        } else {
+
+            sourceAccount = accounts.get(1);
+            destinationAccount = accounts.get(0);
         }
 
-        if (transferRequest.getAmount().compareTo(BigDecimal.ZERO) <= 0) {
-            throw new IllegalArgumentException("Amount must be greater than 0");
-        }
-        if (sourceAccount.getBalance().compareTo(transferRequest.getAmount()) < 0) {
-            throw new IllegalArgumentException("Source account has insufficient balance");
+        // 7. Check that the source account has sufficient funds.
+        if (sourceAccount.getBalance()
+                .compareTo(transferRequest.getAmount()) < 0) {
+            throw new IllegalArgumentException(
+                    "Source account has insufficient balance");
         }
 
-        BigDecimal newSourceBalance = sourceAccount.getBalance().subtract(transferRequest.getAmount());
-        BigDecimal newDestinationBalance = destinationAccount.getBalance().add(transferRequest.getAmount());
+        // 8. Calculate the new balances.
+        BigDecimal newSourceBalance = sourceAccount.getBalance()
+                .subtract(transferRequest.getAmount());
+
+        BigDecimal newDestinationBalance = destinationAccount.getBalance()
+                .add(transferRequest.getAmount());
+
+        // 9. Update both account balances.
         sourceAccount.setBalance(newSourceBalance);
         destinationAccount.setBalance(newDestinationBalance);
+
         bankAccountRepository.save(sourceAccount);
         bankAccountRepository.save(destinationAccount);
 
-        Transfer transfer = new Transfer(sourceAccount, destinationAccount, transferRequest.getAmount());
+        // 10. Create and save the transfer record.
+        Transfer transfer = new Transfer(
+                sourceAccount,
+                destinationAccount,
+                transferRequest.getAmount());
+
         transfer.setStatus("SUCCESS");
+
         Transfer savedTransfer = transferRepository.save(transfer);
-        IdempotencyRecord idempotencyRecord = new IdempotencyRecord(idempotencyKey, requestHash, savedTransfer);
+
+        // 11. Save the idempotency record in the same transaction.
+        IdempotencyRecord idempotencyRecord = new IdempotencyRecord(
+                idempotencyKey,
+                requestHash,
+                savedTransfer);
+
         idempotencyRepository.save(idempotencyRecord);
-        return new TransferResponse(savedTransfer.getId(), savedTransfer.getSourceAccount().getId(),
-                savedTransfer.getDestinationAccount().getId(),
-                savedTransfer.getAmount(), savedTransfer.getStatus());
+
+        // 12. Return the successful transfer response.
+        return buildTransferResponse(savedTransfer);
     }
+
 }
