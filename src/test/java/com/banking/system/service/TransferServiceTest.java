@@ -8,236 +8,292 @@ import com.banking.system.entity.Transfer;
 import com.banking.system.repository.BankAccountRepository;
 import com.banking.system.repository.IdempotencyRepository;
 import com.banking.system.repository.TransferRepository;
-
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.transaction.TransactionStatus;
+import org.springframework.transaction.support.TransactionCallback;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
 import java.util.Optional;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class TransferServiceTest {
 
-    @Mock
-    private BankAccountRepository bankAccountRepository;
+        @Mock
+        private BankAccountRepository bankAccountRepository;
 
-    @Mock
-    private TransferRepository transferRepository;
+        @Mock
+        private TransferRepository transferRepository;
 
-    @Mock
-    private IdempotencyRepository idempotencyRepository;
+        @Mock
+        private IdempotencyRepository idempotencyRepository;
 
-    @Mock
-    private TransferRequestHasher transferRequestHasher;
+        @Mock
+        private TransferRequestHasher transferRequestHasher;
 
-    @Mock
-    private BankAccountService bankAccountService;
+        @Mock
+        private TransferExecutionService transferExecutionService;
 
-    @InjectMocks
-    private TransferService transferService;
+        @Mock
+        private TransactionTemplate transactionTemplate;
 
-    private TransferRequest transferRequest;
-    private BankAccount sourceAccount;
-    private BankAccount destinationAccount;
-    private Transfer savedTransfer;
+        @InjectMocks
+        private TransferService transferService;
 
-    private String idempotencyKey;
-    private String requestHash;
+        private TransferRequest transferRequest;
+        private BankAccount sourceAccount;
+        private BankAccount destinationAccount;
+        private Transfer savedTransfer;
 
-    @BeforeEach
-    void setUp() {
-        idempotencyKey = "transfer-123";
-        requestHash = "original-request-hash";
+        private String idempotencyKey;
+        private String requestHash;
 
-        transferRequest = new TransferRequest();
-        transferRequest.setSourceAccountId(1L);
-        transferRequest.setDestinationAccountId(2L);
-        transferRequest.setAmount(new BigDecimal("100.00"));
+        @BeforeEach
+        void setUp() {
 
-        sourceAccount = new BankAccount(
-                "Alice",
-                "alice@example.com",
-                new BigDecimal("1000.00"));
-        sourceAccount.setId(1L);
+                idempotencyKey = "transfer-123";
+                requestHash = "original-request-hash";
 
-        destinationAccount = new BankAccount(
-                "Bob",
-                "bob@example.com",
-                new BigDecimal("500.00"));
-        destinationAccount.setId(2L);
+                transferRequest = new TransferRequest();
+                transferRequest.setSourceAccountId(1L);
+                transferRequest.setDestinationAccountId(2L);
+                transferRequest.setAmount(new BigDecimal("100.00"));
 
-        savedTransfer = new Transfer(
-                sourceAccount,
-                destinationAccount,
-                new BigDecimal("100.00"));
-        savedTransfer.setId(101L);
-        savedTransfer.setStatus("SUCCESS");
-    }
+                sourceAccount = new BankAccount(
+                                "Alice",
+                                "alice@example.com",
+                                new BigDecimal("1000.00"));
 
-    @Test
-    void repeatedRequestWithSameKeyReturnsOriginalTransfer() {
+                sourceAccount.setId(1L);
 
-        when(transferRequestHasher.hash(transferRequest))
-                .thenReturn(requestHash);
+                destinationAccount = new BankAccount(
+                                "Bob",
+                                "bob@example.com",
+                                new BigDecimal("500.00"));
 
-        IdempotencyRecord existingRecord = new IdempotencyRecord(
-                idempotencyKey,
-                requestHash,
-                savedTransfer);
+                destinationAccount.setId(2L);
 
-        when(idempotencyRepository.findByIdempotencyKey(idempotencyKey))
-                .thenReturn(Optional.of(existingRecord));
+                savedTransfer = new Transfer(
+                                sourceAccount,
+                                destinationAccount,
+                                new BigDecimal("100.00"));
 
-        TransferResponse response = transferService.transferMoney(
-                transferRequest,
-                idempotencyKey);
+                savedTransfer.setId(101L);
+                savedTransfer.setStatus("SUCCESS");
 
-        assertEquals(101L, response.getTransferId());
-        assertEquals(1L, response.getSourceAccountId());
-        assertEquals(2L, response.getDestinationAccountId());
-        assertEquals(new BigDecimal("100.00"), response.getAmount());
-        assertEquals("SUCCESS", response.getStatus());
+                // Execute TransactionTemplate callbacks inside unit tests.
+                lenient().when(transactionTemplate.execute(
+                                any(TransactionCallback.class)))
+                                .thenAnswer(invocation -> {
+                                        TransactionCallback<?> callback = invocation.getArgument(0);
 
-        verify(bankAccountRepository, never())
-                .findByIdWithPessimisticWriteLock(anyLong());
+                                        return callback.doInTransaction(
+                                                        mock(TransactionStatus.class));
+                                });
+        }
 
-        verify(bankAccountRepository, never())
-                .save(any(BankAccount.class));
+        @Test
+        void repeatedRequestWithSameKeyReturnsOriginalTransfer() {
 
-        verify(transferRepository, never())
-                .save(any(Transfer.class));
+                when(transferRequestHasher.hash(transferRequest))
+                                .thenReturn(requestHash);
 
-        verify(idempotencyRepository, never())
-                .save(any(IdempotencyRecord.class));
-    }
+                IdempotencyRecord existingRecord = new IdempotencyRecord(
+                                idempotencyKey,
+                                requestHash,
+                                savedTransfer);
 
-    @Test
-    void reusedIdempotencyKeyWithDifferentRequestShouldBeRejected() {
+                when(idempotencyRepository.findByIdempotencyKey(idempotencyKey))
+                                .thenReturn(Optional.of(existingRecord));
 
-        TransferRequest differentRequest = new TransferRequest();
-        differentRequest.setSourceAccountId(1L);
-        differentRequest.setDestinationAccountId(2L);
-        differentRequest.setAmount(new BigDecimal("500.00"));
+                TransferResponse response = transferService.transferMoney(
+                                transferRequest,
+                                idempotencyKey);
 
-        when(transferRequestHasher.hash(differentRequest))
-                .thenReturn("different-request-hash");
+                assertEquals(101L, response.getTransferId());
+                assertEquals(1L, response.getSourceAccountId());
+                assertEquals(2L, response.getDestinationAccountId());
+                assertEquals(new BigDecimal("100.00"), response.getAmount());
+                assertEquals("SUCCESS", response.getStatus());
 
-        IdempotencyRecord existingRecord = new IdempotencyRecord(
-                idempotencyKey,
-                requestHash,
-                savedTransfer);
+                verify(transferExecutionService, never())
+                                .executeTransfer(any(), any(), any());
 
-        when(idempotencyRepository.findByIdempotencyKey(idempotencyKey))
-                .thenReturn(Optional.of(existingRecord));
+                verify(transferRepository, never())
+                                .save(any(Transfer.class));
 
-        IllegalArgumentException exception = assertThrows(
-                IllegalArgumentException.class,
-                () -> transferService.transferMoney(
-                        differentRequest,
-                        idempotencyKey));
+                verify(idempotencyRepository, never())
+                                .save(any(IdempotencyRecord.class));
+        }
 
-        assertEquals(
-                "Idempotency key was already used for a different transfer request",
-                exception.getMessage());
+        @Test
+        void reusedIdempotencyKeyWithDifferentRequestShouldBeRejected() {
 
-        verify(bankAccountRepository, never())
-                .findByIdWithPessimisticWriteLock(anyLong());
+                TransferRequest differentRequest = new TransferRequest();
+                differentRequest.setSourceAccountId(1L);
+                differentRequest.setDestinationAccountId(2L);
+                differentRequest.setAmount(new BigDecimal("500.00"));
 
-        verify(bankAccountRepository, never())
-                .save(any(BankAccount.class));
+                when(transferRequestHasher.hash(differentRequest))
+                                .thenReturn("different-request-hash");
 
-        verify(transferRepository, never())
-                .save(any(Transfer.class));
+                IdempotencyRecord existingRecord = new IdempotencyRecord(
+                                idempotencyKey,
+                                requestHash,
+                                savedTransfer);
 
-        verify(idempotencyRepository, never())
-                .save(any(IdempotencyRecord.class));
-    }
+                when(idempotencyRepository.findByIdempotencyKey(idempotencyKey))
+                                .thenReturn(Optional.of(existingRecord));
 
-    @Test
-    void newIdempotencyKeyShouldProcessAndSaveTransfer() {
+                IllegalArgumentException exception = assertThrows(
+                                IllegalArgumentException.class,
+                                () -> transferService.transferMoney(
+                                                differentRequest,
+                                                idempotencyKey));
 
-        // Arrange
-        when(transferRequestHasher.hash(transferRequest))
-                .thenReturn(requestHash);
+                assertEquals(
+                                "Idempotency key has already been used with a different request",
+                                exception.getMessage());
 
-        when(idempotencyRepository.findByIdempotencyKey(idempotencyKey))
-                .thenReturn(Optional.empty());
+                verify(transferExecutionService, never())
+                                .executeTransfer(any(), any(), any());
 
-        when(bankAccountRepository.findByIdWithPessimisticWriteLock(1L))
-                .thenReturn(sourceAccount);
+                verify(transferRepository, never())
+                                .save(any(Transfer.class));
 
-        when(bankAccountRepository.findByIdWithPessimisticWriteLock(2L))
-                .thenReturn(destinationAccount);
+                verify(idempotencyRepository, never())
+                                .save(any(IdempotencyRecord.class));
+        }
 
-        when(transferRepository.save(any(Transfer.class)))
-                .thenAnswer(invocation -> {
-                    Transfer transfer = invocation.getArgument(0);
-                    transfer.setId(101L);
-                    return transfer;
-                });
+        @Test
+        void newIdempotencyKeyShouldProcessAndSaveTransfer() {
 
-        when(idempotencyRepository.save(any(IdempotencyRecord.class)))
-                .thenAnswer(invocation -> invocation.getArgument(0));
+                when(transferRequestHasher.hash(transferRequest))
+                                .thenReturn(requestHash);
 
-        // Act
-        TransferResponse response = transferService.transferMoney(
-                transferRequest,
-                idempotencyKey);
+                when(idempotencyRepository.findByIdempotencyKey(idempotencyKey))
+                                .thenReturn(Optional.empty());
 
-        // Assert response
-        assertEquals(101L, response.getTransferId());
-        assertEquals(1L, response.getSourceAccountId());
-        assertEquals(2L, response.getDestinationAccountId());
-        assertEquals(new BigDecimal("100.00"), response.getAmount());
-        assertEquals("SUCCESS", response.getStatus());
+                TransferResponse expectedResponse = new TransferResponse(
+                                101L,
+                                1L,
+                                2L,
+                                new BigDecimal("100.00"),
+                                "SUCCESS");
 
-        // Assert account balances
-        assertEquals(
-                new BigDecimal("900.00"),
-                sourceAccount.getBalance());
+                when(transferExecutionService.executeTransfer(
+                                transferRequest,
+                                idempotencyKey,
+                                requestHash))
+                                .thenAnswer(invocation -> {
 
-        assertEquals(
-                new BigDecimal("600.00"),
-                destinationAccount.getBalance());
+                                        sourceAccount.setBalance(
+                                                        new BigDecimal("900.00"));
 
-        // Verify the transfer was saved
-        ArgumentCaptor<Transfer> transferCaptor = ArgumentCaptor.forClass(Transfer.class);
+                                        destinationAccount.setBalance(
+                                                        new BigDecimal("600.00"));
 
-        verify(transferRepository, times(1))
-                .save(transferCaptor.capture());
+                                        return expectedResponse;
+                                });
 
-        Transfer actualTransfer = transferCaptor.getValue();
+                TransferResponse response = transferService.transferMoney(
+                                transferRequest,
+                                idempotencyKey);
 
-        assertEquals(sourceAccount, actualTransfer.getSourceAccount());
-        assertEquals(destinationAccount, actualTransfer.getDestinationAccount());
-        assertEquals(new BigDecimal("100.00"), actualTransfer.getAmount());
-        assertEquals("SUCCESS", actualTransfer.getStatus());
+                assertEquals(101L, response.getTransferId());
+                assertEquals(1L, response.getSourceAccountId());
+                assertEquals(2L, response.getDestinationAccountId());
+                assertEquals(new BigDecimal("100.00"), response.getAmount());
+                assertEquals("SUCCESS", response.getStatus());
 
-        // Verify the idempotency record was saved
-        ArgumentCaptor<IdempotencyRecord> recordCaptor = ArgumentCaptor.forClass(IdempotencyRecord.class);
+                assertEquals(
+                                new BigDecimal("900.00"),
+                                sourceAccount.getBalance());
 
-        verify(idempotencyRepository, times(1))
-                .save(recordCaptor.capture());
+                assertEquals(
+                                new BigDecimal("600.00"),
+                                destinationAccount.getBalance());
 
-        IdempotencyRecord actualRecord = recordCaptor.getValue();
+                verify(transferExecutionService, times(1))
+                                .executeTransfer(
+                                                transferRequest,
+                                                idempotencyKey,
+                                                requestHash);
+        }
 
-        assertEquals(idempotencyKey, actualRecord.getIdempotencyKey());
-        assertEquals(requestHash, actualRecord.getRequestHash());
-        assertEquals(101L, actualRecord.getTransfer().getId());
+        @Test
+        void sameKeyAndSameRequestShouldNotExecuteTransferTwice() {
 
-        // Both account updates should be requested.
-        verify(bankAccountRepository, times(1)).save(sourceAccount);
-        verify(bankAccountRepository, times(1)).save(destinationAccount);
-    }
+                when(transferRequestHasher.hash(transferRequest))
+                                .thenReturn(requestHash);
+
+                IdempotencyRecord existingRecord = new IdempotencyRecord(
+                                idempotencyKey,
+                                requestHash,
+                                savedTransfer);
+
+                when(idempotencyRepository.findByIdempotencyKey(idempotencyKey))
+                                .thenReturn(Optional.of(existingRecord));
+
+                TransferResponse firstResponse = transferService.transferMoney(
+                                transferRequest,
+                                idempotencyKey);
+
+                TransferResponse secondResponse = transferService.transferMoney(
+                                transferRequest,
+                                idempotencyKey);
+
+                assertEquals(
+                                firstResponse.getTransferId(),
+                                secondResponse.getTransferId());
+
+                verify(transferExecutionService, never())
+                                .executeTransfer(any(), any(), any());
+        }
+
+        @Test
+        void duplicateKeyConflictShouldReturnExistingTransfer() {
+
+                when(transferRequestHasher.hash(transferRequest))
+                                .thenReturn(requestHash);
+
+                when(idempotencyRepository.findByIdempotencyKey(idempotencyKey))
+                                .thenReturn(
+                                                Optional.empty(),
+                                                Optional.of(new IdempotencyRecord(
+                                                                idempotencyKey,
+                                                                requestHash,
+                                                                savedTransfer)));
+
+                when(transferExecutionService.executeTransfer(
+                                transferRequest,
+                                idempotencyKey,
+                                requestHash))
+                                .thenThrow(new org.springframework.dao.DataIntegrityViolationException(
+                                                "Duplicate idempotency key"));
+
+                TransferResponse response = transferService.transferMoney(
+                                transferRequest,
+                                idempotencyKey);
+
+                assertEquals(101L, response.getTransferId());
+                assertEquals("SUCCESS", response.getStatus());
+
+                verify(transferExecutionService, times(1))
+                                .executeTransfer(
+                                                transferRequest,
+                                                idempotencyKey,
+                                                requestHash);
+        }
 }

@@ -17,6 +17,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -50,17 +51,22 @@ class TransferRollbackIntegrationTest {
         private Long sourceAccountId;
         private Long destinationAccountId;
 
+        private String idempotencyKey;
+
         @BeforeEach
         void setUp() {
+
                 BankAccount sourceAccount = new BankAccount();
                 sourceAccount.setCustomerName("Rollback Source");
-                sourceAccount.setEmail("rollback-source@example.com");
+                sourceAccount.setEmail(
+                                "rollback-source-" + UUID.randomUUID() + "@example.com");
                 sourceAccount.setBalance(new BigDecimal("1000.00"));
                 sourceAccount.setActive(true);
 
                 BankAccount destinationAccount = new BankAccount();
                 destinationAccount.setCustomerName("Rollback Destination");
-                destinationAccount.setEmail("rollback-destination@example.com");
+                destinationAccount.setEmail(
+                                "rollback-destination-" + UUID.randomUUID() + "@example.com");
                 destinationAccount.setBalance(new BigDecimal("500.00"));
                 destinationAccount.setActive(true);
 
@@ -69,12 +75,18 @@ class TransferRollbackIntegrationTest {
 
                 sourceAccountId = sourceAccount.getId();
                 destinationAccountId = destinationAccount.getId();
+
+                idempotencyKey = "rollback-test-" + UUID.randomUUID();
         }
 
         @Test
         void failedIdempotencySaveShouldRollbackEntireTransfer() {
 
-                doThrow(new RuntimeException("Simulated idempotency save failure"))
+                long transfersBefore = transferRepository.count();
+                long idempotencyRecordsBefore = idempotencyRepository.count();
+
+                doThrow(new RuntimeException(
+                                "Simulated idempotency save failure"))
                                 .when(idempotencyRepositorySpy)
                                 .save(any());
 
@@ -83,18 +95,18 @@ class TransferRollbackIntegrationTest {
                 request.setDestinationAccountId(destinationAccountId);
                 request.setAmount(new BigDecimal("100.00"));
 
-                TransactionTemplate transactionTemplate = new TransactionTemplate(transactionManager);
-
-                assertThrows(RuntimeException.class,
-                                () -> transactionTemplate.execute(status -> transferService.transferMoney(
+                assertThrows(
+                                RuntimeException.class,
+                                () -> transferService.transferMoney(
                                                 request,
-                                                "rollback-test-key")));
+                                                idempotencyKey));
 
                 TransactionTemplate readTransaction = new TransactionTemplate(transactionManager);
 
                 readTransaction.executeWithoutResult(status -> {
 
-                        BankAccount sourceAfter = bankAccountRepository.findById(sourceAccountId).orElseThrow();
+                        BankAccount sourceAfter = bankAccountRepository.findById(sourceAccountId)
+                                        .orElseThrow();
 
                         BankAccount destinationAfter = bankAccountRepository.findById(destinationAccountId)
                                         .orElseThrow();
@@ -111,15 +123,18 @@ class TransferRollbackIntegrationTest {
                                                         .compareTo(destinationAfter.getBalance()),
                                         "Destination balance should be restored");
 
-                        assertEquals(
-                                        0,
-                                        transferRepository.count(),
-                                        "No transfer should be committed after failure");
+                        long transfersAfter = transferRepository.count();
+                        long idempotencyRecordsAfter = idempotencyRepository.count();
 
                         assertEquals(
-                                        0,
-                                        idempotencyRepository.count(),
-                                        "No idempotency record should be committed after failure");
+                                        transfersBefore,
+                                        transfersAfter,
+                                        "Failed transfer should not create a transfer record");
+
+                        assertEquals(
+                                        idempotencyRecordsBefore,
+                                        idempotencyRecordsAfter,
+                                        "Failed transfer should not create an idempotency record");
                 });
         }
 }
