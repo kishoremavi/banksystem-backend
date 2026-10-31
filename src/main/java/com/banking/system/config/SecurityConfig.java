@@ -38,6 +38,10 @@ public class SecurityConfig {
                                                 .authenticationEntryPoint((request, response, authException) -> {
                                                         response.sendError(HttpServletResponse.SC_UNAUTHORIZED,
                                                                         "Unauthorized");
+                                                })
+                                                .accessDeniedHandler((request, response, accessDeniedException) -> {
+                                                        response.sendError(HttpServletResponse.SC_FORBIDDEN,
+                                                                        "Forbidden");
                                                 }))
                                 .authorizeHttpRequests(auth -> auth
                                                 .requestMatchers("/api/auth/**").permitAll()

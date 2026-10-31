@@ -20,6 +20,8 @@ import com.banking.system.repository.UserRepository;
 import org.springframework.transaction.annotation.Transactional;
 
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 @Service
 public class BankAccountService {
@@ -36,9 +38,14 @@ public class BankAccountService {
     }
 
     public void validateAccountOwnership(Long accountId, String email) {
-        // Check whether the user owns this bank account.
+        // Admins can access any account.
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication != null && authentication.getAuthorities().stream()
+                .anyMatch(authority -> "ROLE_ADMIN".equals(authority.getAuthority()))) {
+            return;
+        }
+
         boolean isAccountOwner = userRepository.existsByEmailAndBankAccount_Id(email, accountId);
-        // If not, throw an AccessDeniedException.
         if (!isAccountOwner) {
             throw new AccessDeniedException("You are not authorized customer for this account");
         }
@@ -75,12 +82,23 @@ public class BankAccountService {
         return updatedAccount;
     }
 
-    public void deleteBankAccount(Long id) {
+    @Transactional
+    public void deactivateBankAccount(Long id) {
+
         BankAccount bankAccount = getBankAccountById(id);
+
         if (!bankAccount.isActive()) {
-            throw new IllegalArgumentException("Bank account is not active");
+            throw new IllegalArgumentException(
+                    "Bank account is already inactive");
         }
+
+        if (bankAccount.getBalance().compareTo(BigDecimal.ZERO) != 0) {
+            throw new IllegalArgumentException(
+                    "Cannot deactivate an account with a non-zero balance");
+        }
+
         bankAccount.setActive(false);
+
         bankAccountRepository.save(bankAccount);
     }
 
@@ -105,9 +123,12 @@ public class BankAccountService {
     public BankAccount withdrawMoney(Long id, BigDecimal amount) {
 
         BankAccount bankAccount = bankAccountRepository.findByIdWithPessimisticWriteLock(id);
+
         if (bankAccount == null) {
-            throw new ResourceNotFoundException("Bank account not found : " + id);
+            throw new ResourceNotFoundException(
+                    "Bank account not found: " + id);
         }
+
         if (!bankAccount.isActive()) {
             throw new IllegalArgumentException("Bank account is not active");
         }
@@ -128,6 +149,7 @@ public class BankAccountService {
     }
 
     public List<TransactionResponse> getTransactionsByAccountId(Long bankAccountId) {
+
         BankAccount bankAccount = getBankAccountById(bankAccountId);
 
         List<Transaction> transactions = transactionRepository.findByBankAccountIdOrderByIdDesc(bankAccount.getId());
