@@ -15,18 +15,33 @@ import com.banking.system.exception.ResourceNotFoundException;
 import com.banking.system.mapper.TransactionMapper;
 import com.banking.system.repository.BankAccountRepository;
 import com.banking.system.repository.TransactionRepository;
+import com.banking.system.repository.UserRepository;
+
 import org.springframework.transaction.annotation.Transactional;
+
+import org.springframework.security.access.AccessDeniedException;
 
 @Service
 public class BankAccountService {
 
     private final BankAccountRepository bankAccountRepository;
     private final TransactionRepository transactionRepository;
+    private final UserRepository userRepository;
 
     public BankAccountService(BankAccountRepository bankAccountRepository,
-            TransactionRepository transactionRepository) {
+            TransactionRepository transactionRepository, UserRepository userRepository) {
         this.bankAccountRepository = bankAccountRepository;
         this.transactionRepository = transactionRepository;
+        this.userRepository = userRepository;
+    }
+
+    public void validateAccountOwnership(Long accountId, String email) {
+        // Check whether the user owns this bank account.
+        boolean isAccountOwner = userRepository.existsByEmailAndBankAccount_Id(email, accountId);
+        // If not, throw an AccessDeniedException.
+        if (!isAccountOwner) {
+            throw new AccessDeniedException("You are not authorized customer for this account");
+        }
     }
 
     public BankAccount createBankAccount(String customerName, String email) {
@@ -119,6 +134,10 @@ public class BankAccountService {
         return transactions.stream()
                 .map(TransactionMapper::toTransactionResponse)
                 .collect(Collectors.toList());
+    }
+
+    public List<BankAccount> getAllAccounts() {
+        return bankAccountRepository.findAll();
     }
 
 }

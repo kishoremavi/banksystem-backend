@@ -1,5 +1,6 @@
 package com.banking.system.repository;
 
+import java.util.List;
 import java.util.Optional;
 
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -14,13 +15,13 @@ import jakarta.persistence.LockModeType;
 
 @Repository
 public interface BankAccountRepository
-        extends JpaRepository<BankAccount, Long> {
+                extends JpaRepository<BankAccount, Long> {
 
-    Optional<BankAccount> findByEmail(String email);
+        Optional<BankAccount> findByEmail(String email);
 
-    @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("SELECT b FROM BankAccount b WHERE b.id = :id")
-    BankAccount findByIdWithPessimisticWriteLock(
-            @Param("id") Long id);
+        @Lock(LockModeType.PESSIMISTIC_WRITE)
+        @Query("SELECT b FROM BankAccount b WHERE b.id = :id")
+        BankAccount findByIdWithPessimisticWriteLock(
+                        @Param("id") Long id);
 
 }
