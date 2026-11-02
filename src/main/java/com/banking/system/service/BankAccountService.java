@@ -37,20 +37,6 @@ public class BankAccountService {
         this.userRepository = userRepository;
     }
 
-    public void validateAccountOwnership(Long accountId, String email) {
-        // Admins can access any account.
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication != null && authentication.getAuthorities().stream()
-                .anyMatch(authority -> "ROLE_ADMIN".equals(authority.getAuthority()))) {
-            return;
-        }
-
-        boolean isAccountOwner = userRepository.existsByEmailAndBankAccount_Id(email, accountId);
-        if (!isAccountOwner) {
-            throw new AccessDeniedException("You are not authorized customer for this account");
-        }
-    }
-
     public BankAccount createBankAccount(String customerName, String email) {
         BankAccount bankAccount = new BankAccount();
         bankAccount.setCustomerName(customerName);
@@ -160,6 +146,21 @@ public class BankAccountService {
 
     public List<BankAccount> getAllAccounts() {
         return bankAccountRepository.findAll();
+    }
+
+    // This method validating account belogs to the user or not.
+    public void validateAccountOwnership(Long accountId, String email) {
+        // Admins can access any account.
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication != null && authentication.getAuthorities().stream()
+                .anyMatch(authority -> "ROLE_ADMIN".equals(authority.getAuthority()))) {
+            return;
+        }
+
+        boolean isAccountOwner = userRepository.existsByEmailAndBankAccount_Id(email, accountId);
+        if (!isAccountOwner) {
+            throw new AccessDeniedException("You are not authorized customer for this account");
+        }
     }
 
 }
