@@ -14,6 +14,11 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.web.bind.annotation.RequestParam;
+
 import com.banking.system.dto.AccountResponse;
 import com.banking.system.dto.AdminCreateCustomerRequest;
 import com.banking.system.dto.RegisterRequest;
@@ -22,6 +27,7 @@ import com.banking.system.dto.TransactionResponse;
 import com.banking.system.dto.UpdateAccountRequest;
 import com.banking.system.entity.BankAccount;
 import com.banking.system.mapper.AccountMapper;
+import com.banking.system.mapper.TransactionMapper;
 import com.banking.system.service.BankAccountService;
 import com.banking.system.service.RegistrationService;
 
@@ -109,6 +115,22 @@ public class AdminController {
         bankAccountService.deactivateBankAccount(id);
 
         return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/transactions")
+    public ResponseEntity<Page<TransactionResponse>> getAllTransactionsWithPagination(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
+
+        if (page < 0 || size < 1 || size > 100) {
+            throw new IllegalArgumentException("Invalid pagination parameters");
+        }
+
+        Page<TransactionResponse> transactions = bankAccountService
+                .getAllTransactionsWithPagination(PageRequest.of(page, size))
+                .map(TransactionMapper::toTransactionResponse);
+
+        return ResponseEntity.ok(transactions);
     }
 
 }

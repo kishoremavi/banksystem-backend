@@ -4,7 +4,8 @@ import java.util.List;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
-
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import com.banking.system.entity.Transaction;
 
 @Repository
@@ -12,4 +13,8 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
 
     List<Transaction> findByBankAccountIdOrderByIdDesc(Long bankAccountId);
 
+    Page<Transaction> findByBankAccountIdOrderByIdDesc(
+            Long bankAccountId, Pageable pageable);
+
+    Page<Transaction> findAllByOrderByIdDesc(Pageable pageable);
 }

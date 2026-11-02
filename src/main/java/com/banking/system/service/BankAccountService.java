@@ -18,7 +18,8 @@ import com.banking.system.repository.TransactionRepository;
 import com.banking.system.repository.UserRepository;
 
 import org.springframework.transaction.annotation.Transactional;
-
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -161,6 +162,16 @@ public class BankAccountService {
         if (!isAccountOwner) {
             throw new AccessDeniedException("You are not authorized customer for this account");
         }
+    }
+
+    @Transactional(readOnly = true)
+    public Page<Transaction> getTransactionsByAccountIdWithPagination(Long bankAccountId, Pageable pageable) {
+        return transactionRepository.findByBankAccountIdOrderByIdDesc(bankAccountId, pageable);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<Transaction> getAllTransactionsWithPagination(Pageable pageable) {
+        return transactionRepository.findAllByOrderByIdDesc(pageable);
     }
 
 }
