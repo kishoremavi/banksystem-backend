@@ -8,14 +8,17 @@ import com.banking.system.enums.TransactionType;
 public class TransactionResponse {
 
     private Long id;
+    private Long accountId;
     private BigDecimal amount;
     private TransactionType transactionType;
     private BigDecimal balanceAfter;
     private LocalDateTime createdAt;
 
-    public TransactionResponse(Long id, BigDecimal amount, TransactionType transactionType, BigDecimal balanceAfter,
+    public TransactionResponse(Long id, Long accountId, BigDecimal amount, TransactionType transactionType,
+            BigDecimal balanceAfter,
             LocalDateTime createdAt) {
         this.id = id;
+        this.accountId = accountId;
         this.amount = amount;
         this.transactionType = transactionType;
         this.balanceAfter = balanceAfter;
@@ -24,6 +27,10 @@ public class TransactionResponse {
 
     public Long getId() {
         return id;
+    }
+
+    public Long getAccountId() {
+        return accountId;
     }
 
     public BigDecimal getAmount() {

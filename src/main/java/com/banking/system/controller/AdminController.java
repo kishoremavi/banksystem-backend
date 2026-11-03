@@ -1,5 +1,6 @@
 package com.banking.system.controller;
 
+import java.time.LocalDate;
 import java.util.List;
 
 import org.springframework.http.HttpStatus;
@@ -12,12 +13,15 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.LocalDateTime;
+
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
-import org.springframework.web.bind.annotation.RequestParam;
 
 import com.banking.system.dto.AccountResponse;
 import com.banking.system.dto.AdminCreateCustomerRequest;
@@ -26,6 +30,8 @@ import com.banking.system.dto.TransactionRequest;
 import com.banking.system.dto.TransactionResponse;
 import com.banking.system.dto.UpdateAccountRequest;
 import com.banking.system.entity.BankAccount;
+import com.banking.system.entity.Transaction;
+import com.banking.system.enums.TransactionType;
 import com.banking.system.mapper.AccountMapper;
 import com.banking.system.mapper.TransactionMapper;
 import com.banking.system.service.BankAccountService;
@@ -119,6 +125,10 @@ public class AdminController {
 
     @GetMapping("/transactions")
     public ResponseEntity<Page<TransactionResponse>> getAllTransactionsWithPagination(
+            @RequestParam(required = false) Long accountId,
+            @RequestParam(required = false) TransactionType transactionType,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime startDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime endDate,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size) {
 
@@ -126,11 +136,56 @@ public class AdminController {
             throw new IllegalArgumentException("Invalid pagination parameters");
         }
 
-        Page<TransactionResponse> transactions = bankAccountService
-                .getAllTransactionsWithPagination(PageRequest.of(page, size))
+        if ((startDate == null) != (endDate == null)) {
+            throw new IllegalArgumentException(
+                    "Both start date and end date must be provided");
+        }
+
+        if (startDate != null && startDate.isAfter(endDate)) {
+            throw new IllegalArgumentException(
+                    "Start date cannot be after end date");
+        }
+
+        Pageable pageable = PageRequest.of(page, size);
+
+        Page<Transaction> transactions;
+
+        if (accountId == null && transactionType == null && startDate == null) {
+
+            transactions = bankAccountService
+                    .getAllTransactionsWithPagination(pageable);
+
+        } else if (accountId != null && transactionType == null && startDate == null) {
+
+            transactions = bankAccountService
+                    .getTransactionsByAccountIdWithPagination(accountId, pageable);
+
+        } else if (accountId == null && transactionType != null && startDate == null) {
+
+            transactions = bankAccountService
+                    .getTransactionsByTypeWithPagination(transactionType, pageable);
+
+        } else if (accountId == null && transactionType == null && startDate != null) {
+
+            transactions = bankAccountService
+                    .getTransactionsByDateRangeWithPagination(
+                            startDate, endDate, pageable);
+
+        } else if (accountId != null && transactionType != null && startDate == null) {
+
+            transactions = bankAccountService
+                    .getTransactionsByTypeAndAccountIdWithPagination(
+                            transactionType, accountId, pageable);
+
+        } else {
+            throw new IllegalArgumentException(
+                    "This combination of filters is not implemented yet");
+        }
+
+        Page<TransactionResponse> response = transactions
                 .map(TransactionMapper::toTransactionResponse);
 
-        return ResponseEntity.ok(transactions);
+        return ResponseEntity.ok(response);
     }
 
 }

@@ -1,6 +1,7 @@
 package com.banking.system.service;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -172,6 +173,25 @@ public class BankAccountService {
     @Transactional(readOnly = true)
     public Page<Transaction> getAllTransactionsWithPagination(Pageable pageable) {
         return transactionRepository.findAllByOrderByIdDesc(pageable);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<Transaction> getTransactionsByTypeWithPagination(TransactionType transactionType, Pageable pageable) {
+        return transactionRepository.findByTransactionTypeOrderByIdDesc(transactionType, pageable);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<Transaction> getTransactionsByTypeAndAccountIdWithPagination(TransactionType transactionType,
+            Long bankAccountId,
+            Pageable pageable) {
+        return transactionRepository.findByBankAccountIdAndTransactionTypeOrderByIdDesc(bankAccountId, transactionType,
+                pageable);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<Transaction> getTransactionsByDateRangeWithPagination(LocalDateTime startDate, LocalDateTime endDate,
+            Pageable pageable) {
+        return transactionRepository.findAllByCreatedAtBetweenOrderByIdDesc(startDate, endDate, pageable);
     }
 
 }

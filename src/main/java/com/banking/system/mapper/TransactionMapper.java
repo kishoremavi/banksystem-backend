@@ -6,7 +6,8 @@ import com.banking.system.entity.Transaction;
 public class TransactionMapper {
 
     public static TransactionResponse toTransactionResponse(Transaction transaction) {
-        return new TransactionResponse(transaction.getId(), transaction.getAmount(), transaction.getTransactionType(),
+        return new TransactionResponse(transaction.getId(), transaction.getBankAccount().getId(),
+                transaction.getAmount(), transaction.getTransactionType(),
                 transaction.getBalanceAfter(), transaction.getCreatedAt());
     }
 
