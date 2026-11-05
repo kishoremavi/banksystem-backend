@@ -136,6 +136,12 @@ public class BankAccountService {
         return updatedAccount;
     }
 
+   
+
+    public List<BankAccount> getAllAccounts() {
+        return bankAccountRepository.findAll();
+    }
+
     public List<TransactionResponse> getTransactionsByAccountId(Long bankAccountId) {
 
         BankAccount bankAccount = getBankAccountById(bankAccountId);
@@ -144,10 +150,6 @@ public class BankAccountService {
         return transactions.stream()
                 .map(TransactionMapper::toTransactionResponse)
                 .collect(Collectors.toList());
-    }
-
-    public List<BankAccount> getAllAccounts() {
-        return bankAccountRepository.findAll();
     }
 
     // This method validating account belogs to the user or not.
@@ -165,16 +167,7 @@ public class BankAccountService {
         }
     }
 
-    @Transactional(readOnly = true)
-    public Page<Transaction> getTransactionsByAccountIdWithPagination(Long bankAccountId, Pageable pageable) {
-        return transactionRepository.findByBankAccountIdOrderByIdDesc(bankAccountId, pageable);
-    }
-
-    @Transactional(readOnly = true)
-    public Page<Transaction> getAllTransactionsWithPagination(Pageable pageable) {
-        return transactionRepository.findAllByOrderByIdDesc(pageable);
-    }
-
+   
     @Transactional(readOnly = true)
     public Page<Transaction> getTransactionsByTypeWithPagination(TransactionType transactionType, Pageable pageable) {
         return transactionRepository.findByTransactionTypeOrderByIdDesc(transactionType, pageable);
@@ -193,5 +186,16 @@ public class BankAccountService {
             Pageable pageable) {
         return transactionRepository.findAllByCreatedAtBetweenOrderByIdDesc(startDate, endDate, pageable);
     }
+
+    @Transactional(readOnly = true)
+    public Page<Transaction> getTransactionsByAccountIdWithPagination(Long bankAccountId, Pageable pageable) {
+        return transactionRepository.findByBankAccountIdOrderByIdDesc(bankAccountId, pageable);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<Transaction> getAllTransactionsWithPagination(Pageable pageable) {
+        return transactionRepository.findAllByOrderByIdDesc(pageable);
+    }
+
 
 }
