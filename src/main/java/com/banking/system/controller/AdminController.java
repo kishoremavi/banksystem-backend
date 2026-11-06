@@ -148,42 +148,14 @@ public class AdminController {
 
         Pageable pageable = PageRequest.of(page, size);
 
-        Page<Transaction> transactions;
+        Page<Transaction> transactions = bankAccountService.getFilteredTransactions(
+                accountId,
+                transactionType,
+                startDate,
+                endDate,
+                pageable);
 
-        if (accountId == null && transactionType == null && startDate == null) {
-
-            transactions = bankAccountService
-                    .getAllTransactionsWithPagination(pageable);
-
-        } else if (accountId != null && transactionType == null && startDate == null) {
-
-            transactions = bankAccountService
-                    .getTransactionsByAccountIdWithPagination(accountId, pageable);
-
-        } else if (accountId == null && transactionType != null && startDate == null) {
-
-            transactions = bankAccountService
-                    .getTransactionsByTypeWithPagination(transactionType, pageable);
-
-        } else if (accountId == null && transactionType == null && startDate != null) {
-
-            transactions = bankAccountService
-                    .getTransactionsByDateRangeWithPagination(
-                            startDate, endDate, pageable);
-
-        } else if (accountId != null && transactionType != null && startDate == null) {
-
-            transactions = bankAccountService
-                    .getTransactionsByTypeAndAccountIdWithPagination(
-                            transactionType, accountId, pageable);
-
-        } else {
-            throw new IllegalArgumentException(
-                    "This combination of filters is not implemented yet");
-        }
-
-        Page<TransactionResponse> response = transactions
-                .map(TransactionMapper::toTransactionResponse);
+        Page<TransactionResponse> response = transactions.map(TransactionMapper::toTransactionResponse);
 
         return ResponseEntity.ok(response);
     }

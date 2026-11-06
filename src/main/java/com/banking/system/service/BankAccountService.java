@@ -5,6 +5,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 
 import com.banking.system.dto.TransactionResponse;
@@ -17,7 +18,7 @@ import com.banking.system.mapper.TransactionMapper;
 import com.banking.system.repository.BankAccountRepository;
 import com.banking.system.repository.TransactionRepository;
 import com.banking.system.repository.UserRepository;
-
+import com.banking.system.specification.TransactionSpecifications;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -136,8 +137,6 @@ public class BankAccountService {
         return updatedAccount;
     }
 
-   
-
     public List<BankAccount> getAllAccounts() {
         return bankAccountRepository.findAll();
     }
@@ -167,7 +166,6 @@ public class BankAccountService {
         }
     }
 
-   
     @Transactional(readOnly = true)
     public Page<Transaction> getTransactionsByTypeWithPagination(TransactionType transactionType, Pageable pageable) {
         return transactionRepository.findByTransactionTypeOrderByIdDesc(transactionType, pageable);
@@ -197,5 +195,21 @@ public class BankAccountService {
         return transactionRepository.findAllByOrderByIdDesc(pageable);
     }
 
+    @Transactional(readOnly = true)
+    public Page<Transaction> getFilteredTransactions(
+            Long accountId,
+            TransactionType transactionType,
+            LocalDateTime startDate,
+            LocalDateTime endDate,
+            Pageable pageable) {
+
+        Specification<Transaction> specification = TransactionSpecifications.buildSpecification(
+                accountId,
+                transactionType,
+                startDate,
+                endDate);
+
+        return transactionRepository.findAll(specification, pageable);
+    }
 
 }
